@@ -167,7 +167,8 @@ public class Javac {
 	public static final TypeTag CTC_UNKNOWN = typeTag("UNKNOWN");
 	public static final TypeTag CTC_UNDETVAR = typeTag("UNDETVAR");
 	public static final TypeTag CTC_CLASS = typeTag("CLASS");
-	
+
+	public static final TreeTag CTC_AND = treeTag("AND");
 	public static final TreeTag CTC_NOT_EQUAL = treeTag("NE");
 	public static final TreeTag CTC_LESS_THAN = treeTag("LT");
 	public static final TreeTag CTC_GREATER_THAN = treeTag("GT");

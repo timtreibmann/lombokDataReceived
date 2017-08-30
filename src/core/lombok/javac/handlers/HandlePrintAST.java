@@ -32,7 +32,7 @@ import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import lombok.Lombok;
 import lombok.core.AnnotationValues;
 import lombok.core.HandlerPriority;
-import lombok.core.PrintAST;
+import lombok.PrintAST;
 import lombok.javac.JavacASTVisitor;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
