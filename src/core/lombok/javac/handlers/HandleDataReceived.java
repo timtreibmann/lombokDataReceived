@@ -39,7 +39,6 @@ import static lombok.javac.handlers.JavacHandlerUtil.*;
  * Inject method dataReceivied(ConnectionEvent evt)
  */
 @ProviderFor(JavacAnnotationHandler.class)
-@SuppressWarnings("restriction")
 public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
 
     private JavacElements elements;
