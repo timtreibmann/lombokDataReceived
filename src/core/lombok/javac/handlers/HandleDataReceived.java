@@ -36,112 +36,236 @@ import static lombok.javac.handlers.JavacHandlerUtil.*;
  * Created by ttreibmann on 21.06.17.
  *
  * Handler for annotation @DataReeceived( value = "<custom commandID>"; controller = "<Name of controller class")
- * Inject method dataReceivied(ConnectionEvent evt)
+ * Inject method dataReceivied(ConnectionEvent evt){...} in annotated class
+ * Only classes are a valid target for the annotation @DataReceived
+ * creates
+ *
+ *   private static final org.apache.commons.logging.Log log = org.apache.commons.logging.LogFactory.getLog(Person.class);
+ *   private java.util.List<java.util.concurrent.Future<java.lang.String>> future = new java.util.ArrayList<>();
+ *   private java.util.concurrent.ExecutorService processingThreads = java.util.concurrent.Executors.newFixedThreadPool(5);
+ *   private de.sourcepark.smd.base.queue.ISCPQueue queue;
+ *
+ *   private void init() {
+ *       try {
+ *           queue = de.sourcepark.smd.base.output.OutputQueueCollection.getInstance().get(Mavenproject1Controller.QUEUE_ID);
+ *       } catch (final java.lang.Exception initEx) {
+ *           log.error("Field initialization failed. Error occurred.", initEx);
+ *       }
+ *   }
+ *
+ *   @java.lang.Override
+ *   public void dataReceived(final de.sourcepark.smd.ocl.ConnectionEvent evt) {
+ *       this.init();
+ *       de.sourcepark.smd.base.util.scp.SCPDataObject scpd = evt.getDataObject();
+ *       try {
+ *           if (scpd.hasStatus()) {
+ *               this.doStatusProcessing();
+ *               return;
+ *           }
+ *           if (scpd.isDirty()) {
+ *               log.error("Unwanted modification detected. Message is flagged as dirty.");
+ *               return;
+ *           }
+ *           if (scpd.getCommand("VALID") != null) {
+ *               for (final java.util.concurrent.Future f : future) {
+ *                   if (f.isDone()) {
+ *                       this.doCleanupOrProcessing(f);
+ *                   }
+ *               }
+ *               future.add(processingThreads.submit(new Mavenproject1Controller(scpd)));
+ *           } else if (scpd.getCommand("ALIVE") != null) {
+ *               de.sourcepark.smd.base.util.scp.SCPStatusObject scps = new de.sourcepark.smd.base.util.scp.SCPStatusObject(scpd);
+ *               de.sourcepark.smd.base.util.scp.SCPCommand scpsAddParam = scps.getCommand("ALIVE");
+ *               scpsAddParam.addParam(new de.sourcepark.smd.base.util.scp.SCPParameter("Version", "string", de.sourcepark.smd.base.config.SMDConfiguration.getVersionString(Person.class)));
+ *               queue.offer(scps);
+ *           } else if ((scpd.getCommand("STOP") != null) && scpd.getSource().equalsIgnoreCase(de.sourcepark.smd.base.config.SMDConfiguration.getInstance().getIdentity())) {
+ *               this.stop();
+ *           } else {
+ *               log.error("Unprocessable message received. Possible conflict between command and context. Check message.");
+ *           }
+ *       } catch (final de.sourcepark.smd.base.config.SMDConfigurationException ex) {
+ *           log.error("SMDConfigurationException: Configuration error occurred.", ex);
+ *       } catch (final org.apache.commons.configuration.ConfigurationException ex2) {
+ *           log.error("ConfigurationException: Configuration error occurred.", ex2);
+ *       } catch (final java.lang.Throwable th) {
+ *           log.fatal("Unexpected Exception", th);
+ *       }
+ *   }
+ *
  */
 @ProviderFor(JavacAnnotationHandler.class)
 public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
 
+    //context of compiler object
     private JavacElements elements;
+    //custom command id provided by annotaionparameter
     private String command;
+    //simpel class name of controller provided by annotationparameter
     private String controller;
+    //simple class name of annotated class
     private String classname;
+    //name of node of fieldvaraible processingThreads
     private Name processingThreadsName;
+    //name of node of fieldvaraible queue
     private Name queueName;
 
+    /**
+     * init elements command and controller
+     * validates command
+     * generates needed fields and methods for dataReceived(ConnectionEvent evt){...}
+     * @param annotation The actual annotation - use this object to retrieve the annotation parameters.
+     * @param ast The javac AST node representing the annotation.
+     * @param annotationNode The Lombok AST wrapper around the 'ast' parameter. You can use this object
+     * to travel back up the chain (something javac AST can't do) to the parent of the annotation, as well
+     */
     @Override
     public void handle(final AnnotationValues<DataReceived> annotation, final JCAnnotation ast, final JavacNode annotationNode) {
-
+        //get context of compiler object
         elements = JavacElements.instance(annotationNode.getContext());
+        //get value of annotationparameter value
         command = annotation.getInstance().value();
+        //get value of annotationparameter controller
         controller = annotation.getInstance().controller();
 
-        // add valid command ids here VALID and INVALID for testing see SCPDataObject.getCommand(...)
+        // validate command for SCPDataObject.getCommand(...)
+        // at error if validation fails
         if (!(command.equals("STOP") || command.equals("ALIVE") || command.equals("VALID") || command.equals("INVALID"))) {
             annotationNode.addError("No valid command for @DataReceived('<Command>') specified. InvalidCommand: " + command);
             return;
         }
+        // get enclosing node of original node
         final JavacNode typeNode = annotationNode.up();
+        //generate needed fields for dataReceived(ConnectionEvent evt){..}
         generateFields(typeNode, annotationNode);
+        //generated needed methods for dataReceived(ConnectionEvent evt){..} also generate dataReceived(ConnectionEvent evt){..}
         generateMethods(typeNode, annotationNode);
     }
 
-
+    /*generates and injects Fields:
+    *private ExecutorService processingThreads= Executors.newFixedThreadPool(5);
+    *private java.util.List<java.util.concurrent.Future<java.lang.String>> future = new java.util.ArrayList<>();
+    *private de.sourcepark.smd.base.queue.ISCPQueue queue will be initiated in init()
+    */
     private void generateFields(final JavacNode typeNode, final JavacNode source) {
-
+        //generates private java.util.List<java.util.concurrent.Future<java.lang.String>> future = new java.util.ArrayList<>();
         final JCVariableDecl futureStringList = createFutureStringList(typeNode, source.get());
+        //generates private ExecutorService processingThreads= Executors.newFixedThreadPool(5);
         final JCVariableDecl processingThreadsES = createProcessingThreadsES(typeNode, source.get());
+        //generates private de.sourcepark.smd.base.queue.ISCPQueue
         final JCVariableDecl queueISCP = createqueueISCP(typeNode, source.get());
-        //mark fields as generated by lombok
+        //mark fields as generated by lombok and inject them
         injectFieldAndMarkGenerated(typeNode, futureStringList);
         injectFieldAndMarkGenerated(typeNode, processingThreadsES);
         injectFieldAndMarkGenerated(typeNode, queueISCP);
     }
-
+    //generates private de.sourcepark.smd.base.queue.ISCPQueue queue
     private JCVariableDecl createqueueISCP(final JavacNode typeNode, final JCTree source) {
+        //get treemaker to be able to define new ast nodes
         final JavacTreeMaker maker = typeNode.getTreeMaker();
+        //select type of queque
         final JCFieldAccess queueISCPType = maker.Select(maker.Ident(elements.getName("de.sourcepark.smd.base.queue")), elements.getName("ISCPQueue"));
-
+        //set Flag of fieldvariable queue
         final JCModifiers mods = maker.Modifiers(Flags.PRIVATE);
+        //name fieldvariable queue "queue"
         queueName = typeNode.toName("queue");
-
+        //create definition of variable queue with specific parameters and validate outcome node
+        //returns the definition of the variable queue as node
         return recursiveSetGeneratedBy(maker.VarDef(mods, queueName, queueISCPType, null), source, typeNode.getContext());
     }
-
+    //generates AND initiates private ExecutorService processingThreads= Executors.newFixedThreadPool(5);
     private JCVariableDecl createProcessingThreadsES(final JavacNode typeNode, final JCTree source) {
+        //get treemaker to be able to define new ast nodes
         final JavacTreeMaker maker = typeNode.getTreeMaker();
+        //select type of processingThreads
         final JCFieldAccess processingThreadType = maker.Select(maker.Ident(elements.getName("java.util.concurrent")), elements.getName("ExecutorService"));
-
+        //set Flag of fieldvariable processingThreads
         final JCModifiers mods = maker.Modifiers(Flags.PRIVATE);
+        //name fieldvariable processingThreads "processingThreads"
         processingThreadsName = typeNode.toName("processingThreads");
+        //invoke method java.util.concurrent.Executors.newFixedThreadPool(5) for initiation of variable processingThreads
         final JCMethodInvocation executors = maker.Apply(List.<JCExpression>nil(), chainDotsString(typeNode, "java.util.concurrent.Executors.newFixedThreadPool"), List.<JCExpression>of(maker.Literal(CTC_INT, 5)));
+        //create definition of variable processingThreads with specific parameters and validate outcome node
+        //returns the definition of the variable processingThreads as node
         return recursiveSetGeneratedBy(maker.VarDef(mods, processingThreadsName, processingThreadType, executors), source, typeNode.getContext());
     }
-
+    //generates AND initiates private java.util.List<java.util.concurrent.Future<java.lang.String>> future = new java.util.ArrayList<>();
     private JCVariableDecl createFutureStringList(final JavacNode typeNode, final JCTree source) {
+        //get treemaker to be able to define new ast nodes
         final JavacTreeMaker maker = typeNode.getTreeMaker();
+        //select type of java.util.List
         final JCFieldAccess listType = maker.Select(maker.Ident(elements.getName("java.util")), elements.getName("List"));
+        //select type of java.util.concurrent.Future
         final JCFieldAccess futureType = getFutureType(maker);
+        //select type of java.util.ArrayList
         final JCFieldAccess arrayList = maker.Select(maker.Ident(elements.getName("java.util")), elements.getName("ArrayList"));
-
+        //apply generic Type <> to selected ArrayList type
         final JCExpression arrayListTypeWithGeneric = maker.TypeApply(arrayList, List.<JCExpression>nil());
-
-
+        //set flag of fieldvariable future
         final JCModifiers mods = maker.Modifiers(Flags.PRIVATE);
+        //name fieldvariable future "future"
         final Name futureName = typeNode.toName("future");
-
+        //select type of String
         final JCExpression stringType = genJavaLangTypeRef(typeNode, "String");
+        //store type of string in a list of expressions
         final ListBuffer<JCExpression> typeArgsSTtoF = new ListBuffer<JCExpression>();
         typeArgsSTtoF.append(stringType);
+        //apply expression of type of string to type of java.util.concurrent.Future as generic type
         final JCExpression futureTypeWithString = maker.TypeApply(futureType, typeArgsSTtoF.toList());
+        //store type of java.util.concurrent.Future<String> in a list of expressions
         final ListBuffer<JCExpression> typeArgsFtoList = new ListBuffer<JCExpression>();
         typeArgsFtoList.append(futureTypeWithString);
+        //apply expression of type of java.util.concurrent.Future<String> to java.util.List as generic type
         final JCTree.JCExpression paramType = maker.TypeApply(listType, typeArgsFtoList.toList());
+        //create new instance of class ArrayList with selected typ java.util.ArrayList
 
+        // Arg 1 is the enclosing class, but we won't instantiate an inner class.
+        // Arg 2 is a list of type parameters (of the enclosing class).
+        // Arg 3 is the actual class expression.
+        // Arg 4 is a list of arguments to pass to the constructor.
+        // Arg 5 is a class body, for creating an anonymous class.
         final JCNewClass newArrayList = maker.NewClass(null,
                 List.<JCExpression>nil(), arrayListTypeWithGeneric,
                 List.<JCExpression>nil(), null);
+        //create definition of variable future with specific parameters and validate outcome node
+        //returns the definition of the variable future as node
         return recursiveSetGeneratedBy(maker.VarDef(mods, futureName, paramType, newArrayList), source, typeNode.getContext());
     }
 
+    /*ensures that annotation is on class level
+    *saves simplename of annotated class in variable classname
+    *searches for field log created by @CommonsLog - with @DataReceived annotated class must be annotated with @Commonslog
+    * and stores field in JavacNode logField - Throws error if not found
+    *searches for field future and stores field in JavacNode futureField - Throws error if not found
+    *delegates creation of method dataReceived(ConnectionEvent evt) and init()
+    *injects methods dataReceived(ConnectionEvent evt) and init() of delegated creation
+    */
     private void generateMethods(final JavacNode typeNode, final JavacNode source) {
 
         boolean notAClass = true;
+        //check if annotation is on classlevel
         if (typeNode.get() instanceof JCClassDecl) {
+            //store simplename of annotated class
             classname = ((JCClassDecl) typeNode.get()).getSimpleName().toString();
+            //check that annotation is NOT used on interface, annotation or enum
             final long flags = ((JCClassDecl) typeNode.get()).mods.flags;
             notAClass = (flags & (Flags.INTERFACE | Flags.ANNOTATION | Flags.ENUM )) != 0;
         }
-
+        //if annotation is annotated on non valid target throw error
         if (notAClass) {
             source.addError("@DataReceived is only supported on a class.");
             return;
         }
-
+        //search for field log created by @CommonsLog
+        //search for field future need for getContext for adding finalifneeded in forloop
         JavacNode logField = null;
         JavacNode futureField = null;
+        //traverse provided ast down to search for fields
         for (final JavacNode field : typeNode.down()) {
+            //check if kind node is a field
             if (field.getKind() != AST.Kind.FIELD) continue;
+            //cast field to JCVariableDecl
             final JCVariableDecl fieldDecl = (JCVariableDecl) field.get();
+            //check if JCVariableDecl is named future if true store field as futureField
             if (fieldDecl.name.toString().equals("future")) {
                 futureField = field;
             }
@@ -151,71 +275,166 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
             if ((fieldDecl.mods.flags & Flags.STATIC) == 0) continue;
             //Skip nonfinal fields.
             if ((fieldDecl.mods.flags & Flags.FINAL) == 0) continue;
+            //store field as logField
             logField = field;
         }
+        //if no logField is found throw error
         if (logField == null) {
             source.addError("Missing @CommonsLog for log variable.");
             return;
         }
+        //if no futureField is found throw error
         if (futureField == null) {
             source.addError("FutureField is null. Initiation failed.");
             return;
         }
-
-        JCMethodDecl dataReceiviedMethod = createDataReceivied(typeNode, source.get(), logField, futureField);
-        JCMethodDecl createInit = createInit(typeNode, source.get());
+        //delegate method creation of dataReceived(ConnectionEvent evt) and init() to specific methods
+        final JCMethodDecl dataReceiviedMethod = createDataReceivied(typeNode, source.get(), logField, futureField);
+        final JCMethodDecl createInit = createInit(typeNode, source.get());
+        //inject generated methods dataReceived(ConnectionEvent evt) and init()
         injectMethod(typeNode, createInit);
         injectMethod(typeNode, dataReceiviedMethod);
 
     }
 
+    /*creates
+    *private void init() {
+    *    try {
+    *        queue = de.sourcepark.smd.base.output.OutputQueueCollection.getInstance().get(Mavenproject1Controller.QUEUE_ID);
+    *    } catch (final java.lang.Exception initEx) {
+    *        log.error("Field initialization failed. Error occurred.", initEx);
+    *    }
+    *}
+    */
     private JCMethodDecl createInit(final JavacNode typeNode, final JCTree source) {
+        //get treemaker to be able to define new ast nodes
         final JavacTreeMaker maker = typeNode.getTreeMaker();
+        //store for statements of method init()
         final ListBuffer<JCStatement> initStatements = new ListBuffer<JCStatement>();
+        //store for statements of try block
         final ListBuffer<JCStatement> tryStatements = new ListBuffer<JCStatement>();
+        //define modifier of method init()
         final JCModifiers mods = maker.Modifiers(Flags.PRIVATE);
+        //define return typ of method init()
         final JCExpression returnTypeVoid = maker.Type(Javac.createVoidType(typeNode.getSymbolTable(), CTC_VOID));
+        //add statement in try block that executes initialisation of field queue
         tryStatements.append(maker.Exec(maker.Assign(maker.Ident(queueName), queueInitialisation(maker, typeNode))));
+        //add try catch block to statements of init()
         initStatements.append(initTryCatch(tryStatements, maker, typeNode));
+        //add all statements to method body of init()
         final JCBlock initBlock = maker.Block(0, initStatements.toList());
+        //create definition of method init() with specific parameters and validate outcome node
+        //returns the definition of the method init() as node
         return recursiveSetGeneratedBy(maker.MethodDef(mods, typeNode.toName("init"), returnTypeVoid, List.<JCTypeParameter>nil(), List.<JCVariableDecl>nil(), List.<JCExpression>nil(), initBlock, null), source, typeNode.getContext());
     }
 
+    /* creates
+     * de.sourcepark.smd.base.output.OutputQueueCollection.getInstance().get(Mavenproject1Controller.QUEUE_ID);
+     */
     private JCMethodInvocation queueInitialisation(final JavacTreeMaker maker, final JavacNode typeNode) {
+        //selects constant QUEUE_ID of named controller via annotation value > controller
         final JCFieldAccess queueStaticString = maker.Select(maker.Ident(elements.getName(controller)), elements.getName("QUEUE_ID"));
+        //selects field de.sourcepark.smd.base.output.OutputQueueCollection.getInstance
         final JCFieldAccess getInstanceFA = maker.Select(maker.Ident(elements.getName("de.sourcepark.smd.base.output.OutputQueueCollection")), elements.getName("getInstance"));
+        //invoke mehtod de.sourcepark.smd.base.output.OutputQueueCollection.getInstance()
         final JCMethodInvocation queueGetInstance = maker.Apply(List.<JCExpression>nil(), chainDotsString(typeNode, getInstanceFA.toString()), List.<JCExpression>nil());
+        //select field de.sourcepark.smd.base.output.OutputQueueCollection.getInstance().get
         final JCFieldAccess getFA = maker.Select(queueGetInstance, elements.getName("get"));
+        //invoke de.sourcepark.smd.base.output.OutputQueueCollection.getInstance().get(Mavenproject1Controller.QUEUE_ID);
+        //and returns it
         return maker.Apply(List.<JCExpression>nil(), getFA, List.<JCExpression>of(queueStaticString));
     }
 
+    /* creates
+     * try {...}
+     *      catch (final java.lang.Exception initEx) {
+     *        log.error("Field initialization failed. Error occurred.", initEx);
+     *    }
+     */
     private JCTree.JCTry initTryCatch(final ListBuffer<JCStatement> tryStatements, final JavacTreeMaker maker, final JavacNode typeNode) {
+       //adds statements to try block
         final JCBlock tryBlock = maker.Block(0, tryStatements.toList());
+        //store for statements of catch block
         final ListBuffer<JCStatement> statementsCatchBlock = new ListBuffer<JCStatement>();
+        //create name for exception that could be catched
         final Name initEx = typeNode.toName("initEx");
+        //add catch statement wich will executes
+        //log.error("Field initialization failed. Error occurred.", initEx);
         statementsCatchBlock.append(maker.Exec(maker.Apply(List.<JCExpression>nil(), chainDotsString(typeNode, "log.error"), List.<JCExpression>of(maker.Literal("Field initialization failed. Error occurred."), maker.Ident(initEx)))));
+        //add all catch statements to catch block
         final JCBlock catchBlock = maker.Block(0, statementsCatchBlock.toList());
+        //select typ of exception wich should be catched
         final JCFieldAccess ex = maker.Select(maker.Ident(elements.getName("java.lang")), elements.getName("Exception"));
+        //define parameter variable of catch witch specific parameters
         final JCVariableDecl smdConfigException = maker.VarDef(maker.Modifiers(Flags.FINAL | Flags.PARAMETER), initEx, ex, null);
+        //create catch (..){..}
         final JCCatch jcCatch = maker.Catch(smdConfigException, catchBlock);
+        //store for all catch statements of try block - multiple catches could be defined and stored
         final ListBuffer<JCCatch> listCatch = new ListBuffer<JCCatch>();
+        //create try{..}catch(..){..}
         return maker.Try(tryBlock, listCatch.append(jcCatch).toList(), null);
     }
 
-
+    /* creates
+     *@java.lang.Override
+     *public void dataReceived(final de.sourcepark.smd.ocl.ConnectionEvent evt) {
+     * this.init();
+     *de.sourcepark.smd.base.util.scp.SCPDataObject scpd = evt.getDataObject();
+     * try {
+     *    if (scpd.hasStatus()) {
+     *       this.doStatusProcessing();
+     *       return;
+     *    }
+     *    if (scpd.isDirty()) {
+     *       log.error("Unwanted modification detected. Message is flagged as dirty.");
+     *       return;
+     *    }
+     *    if (scpd.getCommand("<Custom Command>") != null) {
+     *       for (final java.util.concurrent.Future f : future) {
+     *          if (f.isDone()) {
+     *             this.doCleanupOrProcessing(f);
+     *          }
+     *       }
+     *       future.add(processingThreads.submit(new Mavenproject1Controller(scpd)));
+     *    } else if (scpd.getCommand("ALIVE") != null) {
+     *       de.sourcepark.smd.base.util.scp.SCPStatusObject scps = new de.sourcepark.smd.base.util.scp.SCPStatusObject(scpd);
+     *       de.sourcepark.smd.base.util.scp.SCPCommand scpsAddParam = scps.getCommand("ALIVE");
+     *       scpsAddParam.addParam(new de.sourcepark.smd.base.util.scp.SCPParameter("Version", "string", de.sourcepark.smd.base.config.SMDConfiguration.getVersionString(Person.class)));
+     *       queue.offer(scps);
+     *    } else if ((scpd.getCommand("STOP") != null) && scpd.getSource().equalsIgnoreCase(de.sourcepark.smd.base.config.SMDConfiguration.getInstance().getIdentity())) {
+     *       this.stop();
+     *    } else {
+     *       log.error("Unprocessable message received. Possible conflict between command and context. Check message.");
+     *    }
+     * } catch (final SMDConfigurationException ex) {
+     *    log.error("SMDConfigurationException: Configuration error occurred.", ex);
+     * } catch (final ConfigurationException ex2) {
+     *    log.error("ConfigurationException: Configuration error occurred.", ex2);
+     * } catch (final java.lang.Throwable th) {
+     *    log.fatal("Unexpected Exception", th);
+     * }
+     *}
+     */
     private JCMethodDecl createDataReceivied(final JavacNode typeNode, final JCTree source, final JavacNode logField, final JavacNode futureField) {
+        //get treemaker to be able to define new ast nodes
         final JavacTreeMaker maker = typeNode.getTreeMaker();
-
+        //create name for parametervariable evt
         final Name oName = typeNode.toName("evt");
+        //create name for variable scpd
         final Name scpDataObjectName = typeNode.toName("scpd");
+        //create name for variable named after simplename of controllerclass specified in annotation
         final Name mavenProject1ControllerName = typeNode.toName(controller);
+        //create name for variable this
         final Name thisName = typeNode.toName("this");
+        //create name for variable scps
         final Name scpStatusObjectName = typeNode.toName("scps");
+        //create name for variable scpsAddParam
         final Name scpsAddParamName = typeNode.toName("scpsAddParam");
-
+        //create @Override for method dataReceived(ConnectionEvent evt){..}
         final JCAnnotation overrideAnnotation = maker.Annotation(genJavaLangTypeRef(typeNode, "Override"), List.<JCExpression>nil());
+        //define public modifier for  method dataReceived(ConnectionEvent evt){..}
         final JCModifiers mods = maker.Modifiers(Flags.PUBLIC, List.of(overrideAnnotation));
-
+        //select de.sourcepark.smd.ocl.ConnectionEvent will be used as type of parametervariable
         final JCFieldAccess faConnectionEvent = maker.Select(
                 maker.Select(
                         maker.Ident(elements.getName("de.sourcepark.smd")),
