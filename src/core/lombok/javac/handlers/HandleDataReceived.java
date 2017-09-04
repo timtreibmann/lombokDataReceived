@@ -433,6 +433,7 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
         //create @Override for method dataReceived(ConnectionEvent evt){..}
         final JCAnnotation overrideAnnotation = maker.Annotation(genJavaLangTypeRef(typeNode, "Override"), List.<JCExpression>nil());
         //define public modifier for  method dataReceived(ConnectionEvent evt){..}
+        //and add @Override
         final JCModifiers mods = maker.Modifiers(Flags.PUBLIC, List.of(overrideAnnotation));
         //select de.sourcepark.smd.ocl.ConnectionEvent will be used as type of parametervariable
         final JCFieldAccess faConnectionEvent = maker.Select(
@@ -584,7 +585,7 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
         //invoke SMDConfiguration.getInstance().getIdentity()
         final JCMethodInvocation smdCGetIdentityMethodIno = maker.Apply(List.<JCExpression>nil(), smdCGetIdentityeFA, List.<JCExpression>nil());
         //invoke scpd.getSource().equalsIgnoreCase(SMDConfiguration.getInstance().getIdentity())
-        return maker.Apply(List.<JCExpression>nil(), equalsIgnoreCaseFA, List.<JCExpression>of(smdCGetIdentityMethodIno));
+        return maker.Apply(List.<JCExpression>nil(), equalsIgnoreCaseFA, List.<JCExpression>of(smdCGetIdentityMethodIno)); 
     }
 
     /*
