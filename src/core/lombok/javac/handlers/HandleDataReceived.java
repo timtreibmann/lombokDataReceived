@@ -433,6 +433,7 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
         //create @Override for method dataReceived(ConnectionEvent evt){..}
         final JCAnnotation overrideAnnotation = maker.Annotation(genJavaLangTypeRef(typeNode, "Override"), List.<JCExpression>nil());
         //define public modifier for  method dataReceived(ConnectionEvent evt){..}
+        //and add @Override
         final JCModifiers mods = maker.Modifiers(Flags.PUBLIC, List.of(overrideAnnotation));
         //select de.sourcepark.smd.ocl.ConnectionEvent will be used as type of parametervariable
         final JCFieldAccess faConnectionEvent = maker.Select(
@@ -624,9 +625,12 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
      * creates
      * else if (scpd.getCommand("ALIVE") != null) {
      * de.sourcepark.smd.base.util.scp.SCPStatusObject scps = new de.sourcepark.smd.base.util.scp.SCPStatusObject(scpd);
-     * de.sourcepark.smd.base.util.scp.SCPCommand scpsAddParam = scps.getCommand("ALIVE");
-     * scpsAddParam.addParam(new de.sourcepark.smd.base.util.scp.SCPParameter("Version", "string", de.sourcepark.smd.base.config.SMDConfiguration.getVersionString(Person.class)));
+     * scps.getCommand("ALIVE").addParam(new de.sourcepark.smd.base.util.scp.SCPParameter("VERSION", "string", de.sourcepark.smd.base.config.SMDConfiguration.getVersionString(<classname of annotated class>)));
      * queue.offer(scps);
+     *
+     * SCPStatusObject scps = new SCPStatusObject(scpd);
+		scps.getCommand("ALIVE").addParam(new SCPParameter("VERSION", "string", SMDConfiguration.getVersionString(Mavenproject1.class)));
+		queue.offer(scps);
      *
      */
     private JCIf createIfComAlive(final JavacTreeMaker maker, final JavacNode typeNode, final Name scpDataObjectName, final Name scpStatusObjectName, final Name scpsAddParamName, final JCIf scpdGetCommandSTOP, final JCExpression selectscp) {
@@ -645,7 +649,7 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
         //select class SCPParameter in package de.sourcepark.smd.base.util.scp
         final JCFieldAccess sCPParameter = maker.Select(maker.Ident(elements.getName("de.sourcepark.smd.base.util.scp")), elements.getName("SCPParameter"));
         //create string "Version"
-        final JCExpression version = maker.Literal("Version");
+        final JCExpression version = maker.Literal("VERSION");
         //create string "string"
         final JCExpression stringP = maker.Literal("string");
         //select class name of annotated class
@@ -654,24 +658,23 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
         final JCMethodInvocation getVersionString = maker.Apply(List.<JCExpression>nil(), chainDotsString(typeNode, "de.sourcepark.smd.base.config.SMDConfiguration.getVersionString"), List.<JCExpression>of(mp1C));
         //create new instance of de.sourcepark.smd.base.util.scp.SCPParameter with "Version", "string" and name of annotated class as parameter
         final JCExpression scpParameter = maker.NewClass(null, List.<JCExpression>nil(), sCPParameter, List.of(version, stringP, getVersionString), null);
-        //select class SCPCommand in package de.sourcepark.smd.base.util.scp
-        final JCFieldAccess sCPCommand = maker.Select(maker.Ident(elements.getName("de.sourcepark.smd.base.util.scp")), elements.getName("SCPCommand"));
-        //declare new local variable scpsAddParam of type SCPCommand initialized with scps.getCommand("ALIVE")
-        final JCVariableDecl scpCommandObject = maker.VarDef(maker.Modifiers(0), scpsAddParamName, sCPCommand, callMethodInvo(typeNode, maker, scpStatusObjectName.toString(), "getCommand", maker.Literal("ALIVE")));
-        //add statement
-        scpGetCommandALIVEstaments.append(scpCommandObject);
-        //add statement of execution of method invokation -> scpsAddParam.addParam(new de.sourcepark.smd.base.util.scp.SCPParameter("Version", "string", de.sourcepark.smd.base.config.SMDConfiguration.getVersionString(<annotated class>)));
-        scpGetCommandALIVEstaments.append(maker.Exec(maker.Apply(List.<JCExpression>nil(), chainDots(typeNode, scpsAddParamName.toString(), "addParam"), List.of(scpParameter))));
-
-        //add statement of execution of method invokation -> queue.offer(scps);
-        scpGetCommandALIVEstaments.append(maker.Exec(callMethodInvo(typeNode, maker, "queue", "offer", maker.Ident(scpStatusObjectName))));
 
         //this is just for logging
         //add statement of execution of mehtod invokation ->  log.info(In IfScpGetCommand ALIVE != null)
-        //scpGetCommandALIVEstaments.append(maker.Exec(maker.Apply(List.<JCExpression>nil(), chainDotsString(typeNode, "log.info"), List.<JCExpression>of(maker.Literal("In IfScpGetCommand ALIVE != null")))));
+        scpGetCommandALIVEstaments.append(maker.Exec(maker.Apply(List.<JCExpression>nil(), chainDotsString(typeNode, "log.info"), List.<JCExpression>of(maker.Literal("In IfScpGetCommand ALIVE != null")))));
 
         //invoke scpd.getCommand("ALIVE")
         final JCMethodInvocation scpGetCommandALIVEInvo = callMethodInvo(typeNode, maker, scpDataObjectName.toString(), "getCommand", maker.Literal("ALIVE"));
+        //invoke scps.getCommand("ALIVE")
+        final JCMethodInvocation scpsGetCommandAlive = callMethodInvo(typeNode, maker, scpStatusObjectName.toString(), "getCommand", maker.Literal("ALIVE"));
+        //access field scpd.getCommand("ALIVE").addParam
+        final JCFieldAccess getCommandAddParam = maker.Select(scpsGetCommandAlive,elements.getName("addParam"));
+        //invoke scps.getCommand("ALIVE").addParam(new de.sourcepark.smd.base.util.scp.SCPParameter("VERSION", "string", de.sourcepark.smd.base.config.SMDConfiguration.getVersionString(<classname of annotated class>)));
+        final JCMethodInvocation getCAddParaWP = maker.Apply(List.<JCExpression>nil(), getCommandAddParam, List.of(scpParameter));
+        //add statement of execution of //invoke scps.getCommand("ALIVE").addParam(new de.sourcepark.smd.base.util.scp.SCPParameter("VERSION", "string", de.sourcepark.smd.base.config.SMDConfiguration.getVersionString(<classname of annotated class>)));
+        scpGetCommandALIVEstaments.append(maker.Exec(getCAddParaWP));
+        //add statement of execution of method invokation -> queue.offer(scps);
+        scpGetCommandALIVEstaments.append(maker.Exec(callMethodInvo(typeNode, maker, "queue", "offer", maker.Ident(scpStatusObjectName))));
         //thenBlock with all statements
         final JCBlock scpGetCommandALIVEThenBlock = maker.Block(0, scpGetCommandALIVEstaments.toList());
         //create If statement with if (scpd.getCommand("ALIVE") != null)
@@ -713,10 +716,11 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
         forLoopStatements.append(forLoopFisDone);
         //create block of forloop
         final JCBlock forBlock = maker.Block(0, forLoopStatements.toList());
-        //create flag final of forloop variable
-        final long baseFlags = JavacHandlerUtil.addFinalIfNeeded(0, futureField.getContext());
+
+        //NOT Needed: but useful to convert flag of given context to final: final long baseFlags = JavacHandlerUtil.addFinalIfNeeded(0, futureField.getContext());
         //create forEach loop -> for (final java.util.concurrent.Future f : future) {...}
-        final JCEnhancedForLoop getCommandForEachLoop = maker.ForeachLoop(maker.VarDef(maker.Modifiers(baseFlags), varForLoop, getFutureType(maker), null), maker.Ident(typeNode.toName(futureField.getName())), forBlock);
+        //create flag final of forloop variable
+        final JCEnhancedForLoop getCommandForEachLoop = maker.ForeachLoop(maker.VarDef(maker.Modifiers(Flags.FINAL), varForLoop, getFutureType(maker), null), maker.Ident(typeNode.toName(futureField.getName())), forBlock);
         //store for thenblock statements
         final ListBuffer<JCStatement> getCommandThenStatements = new ListBuffer<JCStatement>();
         //add forloop statement to thenstatements
