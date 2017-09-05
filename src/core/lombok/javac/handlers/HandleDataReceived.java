@@ -585,7 +585,7 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
         //invoke SMDConfiguration.getInstance().getIdentity()
         final JCMethodInvocation smdCGetIdentityMethodIno = maker.Apply(List.<JCExpression>nil(), smdCGetIdentityeFA, List.<JCExpression>nil());
         //invoke scpd.getSource().equalsIgnoreCase(SMDConfiguration.getInstance().getIdentity())
-        return maker.Apply(List.<JCExpression>nil(), equalsIgnoreCaseFA, List.<JCExpression>of(smdCGetIdentityMethodIno)); 
+        return maker.Apply(List.<JCExpression>nil(), equalsIgnoreCaseFA, List.<JCExpression>of(smdCGetIdentityMethodIno));
     }
 
     /*
@@ -714,10 +714,11 @@ public class HandleDataReceived extends JavacAnnotationHandler<DataReceived> {
         forLoopStatements.append(forLoopFisDone);
         //create block of forloop
         final JCBlock forBlock = maker.Block(0, forLoopStatements.toList());
-        //create flag final of forloop variable
-        final long baseFlags = JavacHandlerUtil.addFinalIfNeeded(0, futureField.getContext());
+
+        //NOT Needed: but useful to convert flag of given context to final: final long baseFlags = JavacHandlerUtil.addFinalIfNeeded(0, futureField.getContext());
         //create forEach loop -> for (final java.util.concurrent.Future f : future) {...}
-        final JCEnhancedForLoop getCommandForEachLoop = maker.ForeachLoop(maker.VarDef(maker.Modifiers(baseFlags), varForLoop, getFutureType(maker), null), maker.Ident(typeNode.toName(futureField.getName())), forBlock);
+        //create flag final of forloop variable
+        final JCEnhancedForLoop getCommandForEachLoop = maker.ForeachLoop(maker.VarDef(maker.Modifiers(Flags.FINAL), varForLoop, getFutureType(maker), null), maker.Ident(typeNode.toName(futureField.getName())), forBlock);
         //store for thenblock statements
         final ListBuffer<JCStatement> getCommandThenStatements = new ListBuffer<JCStatement>();
         //add forloop statement to thenstatements
